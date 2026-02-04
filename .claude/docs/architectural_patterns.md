@@ -1,145 +1,198 @@
 # Architectural Patterns
 
+## State Management
+
+### Context Providers
+The app uses React Context for global state:
+
+**ThemeContext** (`src/contexts/ThemeContext.tsx`):
+- Manages light/dark theme with system preference detection
+- Persists theme choice to AsyncStorage
+- Provides `useTheme()` and `useColors()` hooks
+
+**AppContext** (`src/contexts/AppContext.tsx`):
+- Manages app settings and initialization state
+- Provides `useApp()` and `useSettings()` hooks
+- Handles loading and error states
+
+### Provider Hierarchy
+```
+App.tsx:82-92
+└── SafeAreaProvider
+    └── AppProvider
+        └── ThemeProvider
+            └── AppContent
+```
+
+## Theme System
+
+### Semantic Color Tokens
+Colors are organized by purpose, not visual value:
+- `background` - Main app background
+- `surface` - Card/elevated backgrounds
+- `textPrimary`, `textSecondary`, `textMuted` - Text hierarchy
+- `success`, `warning`, `danger`, `info` - Semantic states
+
+### Theme Definition
+Both themes (`lightTheme`, `darkTheme`) defined in `src/theme/colors.ts:71-196`
+
+### Using Theme in Components
+```typescript
+import { useColors } from '../contexts/ThemeContext';
+
+const MyComponent = () => {
+  const colors = useColors();
+  return <View style={{ backgroundColor: colors.surface }} />;
+};
+```
+
+## Configuration Pattern
+
+### Centralized Config (`src/config/index.ts`)
+All app constants in one place:
+- `APP_CONFIG` - App metadata (lines 8-12)
+- `DEFAULT_SETTINGS` - Initial settings (lines 17-36)
+- `STORAGE_KEYS` - AsyncStorage keys (lines 43-49)
+- `VALIDATION` - Form validation rules (lines 60-79)
+- `KEYBOARD_SHORTCUTS` - Web shortcuts (lines 86-101)
+- `FEATURES` - Feature flags (lines 109-115)
+
+### Usage
+```typescript
+import { DEFAULT_SETTINGS, VALIDATION } from '../config';
+```
+
 ## Component Architecture
 
 ### Screen Components
-Full-screen views that handle their own state and layout. Each screen:
-- Is a React functional component (`React.FC`)
-- Uses `SafeAreaView` with `edges={['top']}` for safe area handling
-- Contains its own `StyleSheet.create()` at the bottom of the file
-- Imports mock data directly from `src/data/placeholder.ts`
-
-Example: `BajettoApp/src/screens/HomeScreen.tsx:20-131`
+Full-screen views in `src/screens/`:
+- Use `SafeAreaView` with `edges={['top']}`
+- Access theme via `useColors()` hook
+- Dynamic styles computed from theme colors
 
 ### Reusable Components
-Smaller UI components used across multiple screens:
-- Accept props via TypeScript interfaces defined inline
-- Export named exports (not default)
-- Use barrel exports via `index.ts` files
+UI components in `src/components/`:
+- Accept props via TypeScript interfaces
+- Use `useColors()` for theme-aware styling
+- Include accessibility props
 
-Example: `BajettoApp/src/components/SummaryCard.tsx:6-17` (props interface)
+### Feedback Components
+- `LoadingSpinner` - Loading states (full-screen or inline)
+- `ErrorView` - Error display with retry
+- `EmptyState` - Empty data placeholder with action
 
-## Navigation Pattern
+## Validation Pattern
 
-**Bottom Tab Navigation** with 5 main screens:
-- Home, Transactions, Budget, Expenses, Settings
-- Configured in `BajettoApp/src/navigation/TabNavigator.tsx:46-74`
+### Validator Functions (`src/utils/validation.ts`)
+Composable validators that return `{ isValid, error }`:
 
-Icon pattern: Uses Ionicons with outline/filled variants based on focus state
-- `TabNavigator.tsx:22-44` - Icon mapping function
+```typescript
+// Base validators
+required('Field is required')
+minLength(3, 'Too short')
+maxValue(1000, 'Too large')
 
-## Theming Pattern
+// Compose validators
+const titleValidator = compose(
+  required('Title required'),
+  minLength(1),
+  maxLength(100)
+);
 
-### Centralized Color System
-All colors defined in `BajettoApp/src/theme/colors.ts`:
-- Primary palette (lines 2-5)
-- Background colors (lines 7-10)
-- Text colors (lines 12-15)
-- Semantic colors: success, warning, danger, info (lines 17-24)
-- Category-specific colors (lines 26-34)
-- Transaction colors: income (green), expense (red) (lines 40-42)
-
-### Dark Theme
-App uses a dark theme configured in `App.tsx:12-21`:
+// Validate form
+const errors = validateForm(values, {
+  title: transactionTitle,
+  amount: transactionAmount,
+});
 ```
-background: '#0F0F1A'
-card: '#1A1A2E'
-text: '#FFFFFF'
+
+### Pre-built Validators
+- `transactionAmount`, `transactionTitle`, `transactionNote`
+- `budgetAmount`, `budgetName`
+- `pin`
+
+## Formatting Utilities (`src/utils/formatting.ts`)
+
+### Currency
+```typescript
+formatCurrency(1234.56) // "$1,234.56"
+formatCurrency(1500, { compact: true }) // "$1.5K"
+formatTransactionAmount(50, true) // "-$50.00"
 ```
 
-### Color with Alpha
-Transparency is applied by appending hex alpha: `color + '20'` (12.5% opacity)
+### Dates
+```typescript
+formatDate('2024-01-15', 'relative') // "Today" or "Jan 15"
+formatDate('2024-01-15', 'long') // "January 15, 2024"
+```
 
-Example: `BajettoApp/src/screens/HomeScreen.tsx:72` - `colors.success + '20'`
+## Accessibility Pattern
+
+### Props Helpers (`src/utils/accessibility.ts`)
+```typescript
+import { buttonA11yProps, switchA11yProps } from '../utils/accessibility';
+
+<TouchableOpacity {...buttonA11yProps('Add item', 'Create new item')}>
+<Switch {...switchA11yProps('Dark mode', isDark)} />
+```
+
+### Keyboard Shortcuts (Web)
+Defined in `KEYBOARD_SHORTCUTS` config:
+- `Alt+H` - Home
+- `Alt+T` - Transactions
+- `Alt+D` - Toggle theme
+- `Alt+/` - Show shortcuts
 
 ## Styling Pattern
 
-### Inline StyleSheets
-Each component defines styles at the bottom using `StyleSheet.create()`:
+### Dynamic Styles
+Create StyleSheet inside component for theme-dependent styles:
+```typescript
+const colors = useColors();
+const dynamicStyles = StyleSheet.create({
+  container: { backgroundColor: colors.background },
+});
+```
+
+### Static Styles
+Non-theme-dependent styles at file bottom:
 ```typescript
 const styles = StyleSheet.create({
-  container: { ... },
-  // ...
+  header: { padding: 20 },
 });
 ```
 
 ### Card Pattern
-Cards use consistent styling:
-- `backgroundColor: colors.cardBackground`
-- `borderRadius: 12-24` (smaller for list items, larger for main cards)
+Consistent card styling across the app:
+- `backgroundColor: colors.surface`
+- `borderRadius: 12-24`
 - `padding: 14-24`
 
-Example: `BajettoApp/src/components/TransactionItem.tsx:61-69`
+## Error Handling
 
-### Platform-Specific Adjustments
-Use `Platform.OS` for iOS/Android differences:
-
-Example: `BajettoApp/src/navigation/TabNavigator.tsx:84-86`
+### Error State in Context
 ```typescript
-height: Platform.OS === 'ios' ? 88 : 70
-paddingBottom: Platform.OS === 'ios' ? 28 : 10
-```
-
-## Type System
-
-### Core Interfaces
-Defined in `BajettoApp/src/types/index.ts`:
-- `Transaction` (lines 16-24)
-- `Budget` (lines 26-33)
-- `ExpenseSummary` (lines 35-41)
-- `DashboardSummary` (lines 43-48)
-- `SettingsOption` (lines 50-57)
-
-### Category Type
-Union type for all categories: `BajettoApp/src/types/index.ts:3-14`
-
-### Component Props
-Props interfaces defined inline in component files:
-```typescript
-interface ComponentNameProps {
-  // props
+const { state, setError, clearError } = useApp();
+if (state.error) {
+  return <ErrorView message={state.error.message} onRetry={clearError} />;
 }
-export const ComponentName: React.FC<ComponentNameProps> = ({ ... }) => { ... }
 ```
 
-## Data Layer Pattern
+### Loading States
+```typescript
+const { isLoading } = useTheme();
+if (isLoading) {
+  return <LoadingSpinner fullScreen message="Loading..." />;
+}
+```
 
-### Mock Data
-All mock data in `BajettoApp/src/data/placeholder.ts`:
-- `dashboardSummary` (lines 4-9)
-- `recentTransactions` (lines 11-109)
-- `budgets` (lines 111-160)
-- `expenseSummary` (lines 162-205)
-- `settingsOptions` (lines 207-266)
+## Navigation Pattern
 
-### Category Mappings
-Lookup objects for category metadata:
-- `categoryIcons`: Category to Ionicon name (`placeholder.ts:268-280`)
-- `categoryNames`: Category to display name (`placeholder.ts:282-294`)
+### Bottom Tab Navigation
+Configured in `src/navigation/TabNavigator.tsx`:
+- 5 tabs: Home, Transactions, Budget, Expenses, Settings
+- Icon pattern: outline/filled based on focus state
+- Theme-aware colors via `useColors()`
 
-Usage: `BajettoApp/src/components/TransactionItem.tsx:18`
-
-## Icon Pattern
-
-Uses `@expo/vector-icons` Ionicons throughout:
-- Import: `import { Ionicons } from '@expo/vector-icons'`
-- Usage: `<Ionicons name="icon-name" size={24} color={colors.primary} />`
-- Type casting for dynamic icons: `name={iconName as any}`
-
-## Formatting Utilities
-
-### Amount Formatting
-Inline helper functions in components:
-- Currency formatting with K/M suffixes: `SummaryCard.tsx:28-35`
-- Sign prefix for transactions: `TransactionItem.tsx:21-23`
-
-### Date Formatting
-Relative date display (Today/Yesterday/Date): `TransactionItem.tsx:25-38`
-
-## State Management
-
-**Local State Only** - Uses React's `useState` hook:
-- Filter states (search query, selected filters)
-- UI states (active tabs, expanded sections)
-
-No global state management library - data flows top-down from mock imports.
+### Screen Props
+All screens are functional components with `React.FC` type.
